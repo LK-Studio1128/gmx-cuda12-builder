@@ -37,6 +37,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DCUDAToolkit_ROOT=$cuda `
             -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" `
+            -DOpenMP_CUDA_FLAGS="-Xcompiler /openmp" `
             -DCMAKE_INSTALL_PREFIX="C:\gmxout"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path ".\gromacs.sln")) { Write-Error "configure failed: no sln"; exit 1 }
