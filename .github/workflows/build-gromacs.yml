@@ -24,42 +24,48 @@ jobs:
           tar -xzf gromacs.tar.gz
           echo "SRC=$((Get-Location).Path)\gromacs-2026.3" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: CMake Configure
-        shell: pwsh
+      - name: CMake Configure (Ninja + vcvars)
+        shell: cmd
         run: |
-          $cuda = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
-          cmake $env:SRC -G "Visual Studio 17 2022" -A x64 `
-            -DGMX_GPU=CUDA `
-            -DGMX_BUILD_OWN_FFTW=ON `
-            -DGMX_MPI=OFF `
-            -DGMX_OPENMP=OFF `
-            -DGMX_DOUBLE=OFF `
-            -DGMX_HWLOC=OFF `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCUDAToolkit_ROOT=$cuda `
-            -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" `
-            -DOpenMP_CUDA_FLAGS="-Xcompiler /openmp" `
+          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          if not exist "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" goto :noninja
+          set "PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
+          :noninja
+          cd /d "%GITHUB_WORKSPACE%"
+          cmake -S gromacs-2026.3 -B build -G Ninja ^
+            -DGMX_GPU=CUDA ^
+            -DGMX_BUILD_OWN_FFTW=ON ^
+            -DGMX_MPI=OFF ^
+            -DGMX_OPENMP=OFF ^
+            -DGMX_DOUBLE=OFF ^
+            -DGMX_HWLOC=OFF ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCUDAToolkit_ROOT="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" ^
+            -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" ^
             -DCMAKE_INSTALL_PREFIX="C:\gmxout"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path ".\gromacs.sln")) { Write-Error "configure failed: no sln"; exit 1 }
+          if errorlevel 1 exit /b 1
+          if not exist "build\build.ninja" ( echo CONFIG-FAIL & exit /b 1 )
 
-      - name: Build (Release)
-        shell: pwsh
+      - name: Build (Release, Ninja)
+        shell: cmd
         run: |
-          cmake --build . --config Release --parallel 4
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path ".\bin\Release\gmx.exe")) { Write-Error "build failed: no gmx.exe"; exit 1 }
+          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          set "PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
+          cd /d "%GITHUB_WORKSPACE%"
+          cmake --build build --config Release --parallel 4
+          if errorlevel 1 exit /b 1
+          if not exist "build\bin\gmx.exe" ( echo BUILD-FAIL & exit /b 1 )
 
       - name: Install & verify
         shell: pwsh
         run: |
-          cmake --install . --config Release
+          cmake --install build --config Release
           $gmx = "C:\gmxout\bin\gmx.exe"
           if (-not (Test-Path $gmx)) { Write-Error "install failed"; exit 1 }
           & $gmx --version | Select-String "GROMACS version|GPU support|CUDA compiler"
           # 打包：bin 目录补 cuFFT 运行库
-          Copy-Item ".\bin\Release\cufft*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
-          Copy-Item ".\bin\Release\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          Copy-Item "build\bin\cufft*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          Copy-Item "build\bin\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
