@@ -12,10 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install CUDA 12.8 toolkit
-        uses: ilammy/cuda-toolkit@main
-        with:
-          version: '12.8.1'
+      - name: Install CUDA 12.8 toolkit (official local installer, toolkit only)
+        shell: pwsh
+        run: |
+          curl.exe -L --retry 3 -o cuda_install.exe "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_551.86_windows.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Error "cuda download failed"; exit 1 }
+          $p = Start-Process -FilePath "cuda_install.exe" -ArgumentList "-s","-toolkit","-noreboot" -Wait -PassThru
+          Write-Output ("cuda installer exit=" + $p.ExitCode)
+          $nvcc = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin\nvcc.exe"
+          if (-not (Test-Path $nvcc)) { Write-Error "CUDA toolkit not installed"; exit 1 }
+          & $nvcc --version | Select-String "release"
 
       - name: Download GROMACS 2026.3 source
         shell: pwsh
@@ -27,7 +33,7 @@ jobs:
       - name: CMake Configure
         shell: pwsh
         run: |
-          $cuda = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+          $cuda = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
           cmake $env:SRC -G "Visual Studio 17 2022" -A x64 `
             -DGMX_GPU=CUDA `
             -DGMX_BUILD_OWN_FFTW=ON `
