@@ -28,11 +28,13 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-          if not exist "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" goto :noninja
+          where cl
+          if errorlevel 1 ( echo VCVARS-CL-MISSING & exit /b 1 )
           set "PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
-          :noninja
           cd /d "%GITHUB_WORKSPACE%"
           cmake -S gromacs-2026.3 -B build -G Ninja ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
             -DGMX_GPU=CUDA ^
             -DGMX_BUILD_OWN_FFTW=ON ^
             -DGMX_MPI=OFF ^
@@ -50,6 +52,7 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          where cl
           set "PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
           cd /d "%GITHUB_WORKSPACE%"
           cmake --build build --config Release --parallel 4
