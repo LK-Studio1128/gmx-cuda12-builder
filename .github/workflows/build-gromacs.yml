@@ -40,8 +40,8 @@ jobs:
             -DCMAKE_CXX_COMPILER=cl ^
             -DGMX_GPU=CUDA ^
             -DGMX_FFT_LIBRARY=fftw3 ^
-            -DFFTW3F_INCLUDE_DIR="%CD%\fftw" ^
-            -DFFTW3F_LIBRARY="%CD%\fftw\libfftw3f-3.lib" ^
+            -DCMAKE_PREFIX_PATH="%CD%\fftw" ^
+            -DFFTWF_LIBRARY="%CD%\fftw\libfftw3f-3.lib" ^
             -DGMX_MPI=OFF ^
             -DGMX_OPENMP=OFF ^
             -DGMX_DOUBLE=OFF ^
