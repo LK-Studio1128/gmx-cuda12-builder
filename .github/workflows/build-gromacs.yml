@@ -17,14 +17,17 @@ jobs:
         with:
           cuda: '12.8.0'
 
-      - name: Download GROMACS 2026.3 source
+      - name: Download GROMACS 2026.3 source + FFTW dll64
         shell: pwsh
         run: |
           curl.exe -L -o gromacs.tar.gz https://ftp.gromacs.org/gromacs/gromacs-2026.3.tar.gz
           tar -xzf gromacs.tar.gz
-          echo "SRC=$((Get-Location).Path)\gromacs-2026.3" | Out-File -FilePath $env:GITHUB_ENV -Append
+          curl.exe -L -o fftw.zip https://fftw.org/pub/fftw/fftw-3.3.5-dll64.zip
+          New-Item -ItemType Directory -Force -Path fftw | Out-Null
+          tar -xf fftw.zip -C fftw
+          Write-Output "FFTW files:"; Get-ChildItem fftw -Name | Select-Object -First 10
 
-      - name: CMake Configure (Ninja + vcvars)
+      - name: CMake Configure (Ninja + vcvars + MSVC cl)
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
@@ -36,7 +39,9 @@ jobs:
             -DCMAKE_C_COMPILER=cl ^
             -DCMAKE_CXX_COMPILER=cl ^
             -DGMX_GPU=CUDA ^
-            -DGMX_BUILD_OWN_FFTW=ON ^
+            -DGMX_FFT_LIBRARY=fftw3 ^
+            -DFFTW3F_INCLUDE_DIR="%CD%\fftw" ^
+            -DFFTW3F_LIBRARY="%CD%\fftw\libfftw3f-3.lib" ^
             -DGMX_MPI=OFF ^
             -DGMX_OPENMP=OFF ^
             -DGMX_DOUBLE=OFF ^
@@ -52,7 +57,6 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          where cl
           set "PATH=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
           cd /d "%GITHUB_WORKSPACE%"
           cmake --build build --config Release --parallel 4
@@ -66,8 +70,8 @@ jobs:
           $gmx = "C:\gmxout\bin\gmx.exe"
           if (-not (Test-Path $gmx)) { Write-Error "install failed"; exit 1 }
           & $gmx --version | Select-String "GROMACS version|GPU support|CUDA compiler"
-          # 打包：bin 目录补 cuFFT 运行库
-          Copy-Item "build\bin\cufft*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          # 补 FFTW + cuFFT 运行库
+          Copy-Item "fftw\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
           Copy-Item "build\bin\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
 
       - name: Upload artifact
