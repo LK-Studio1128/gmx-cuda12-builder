@@ -28,9 +28,9 @@ jobs:
         run: |
           where vcpkg
           if errorlevel 1 ( git clone --depth 1 https://github.com/microsoft/vcpkg C:\vcpkg & C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics )
-          vcpkg install fftw3f:x64-windows
+          vcpkg install fftw3:x64-windows
           if errorlevel 1 exit /b 1
-          dir C:\vcpkg\installed\x64-windows\lib\*fftw3f*.lib /b 2>nul
+          dir C:\vcpkg\installed\x64-windows\lib\*fftw3*.lib /b 2>nul
           dir C:\vcpkg\installed\x64-windows\include\fftw3.h 2>nul
 
       - name: CMake Configure (Ninja + vcvars + MSVC cl)
