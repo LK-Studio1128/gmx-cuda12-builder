@@ -17,15 +17,21 @@ jobs:
         with:
           cuda: '12.8.0'
 
-      - name: Download GROMACS 2026.3 source + FFTW dll64
+      - name: Download GROMACS 2026.3 source
         shell: pwsh
         run: |
           curl.exe -L -o gromacs.tar.gz https://ftp.gromacs.org/gromacs/gromacs-2026.3.tar.gz
           tar -xzf gromacs.tar.gz
-          curl.exe -L -o fftw.zip https://fftw.org/pub/fftw/fftw-3.3.5-dll64.zip
-          New-Item -ItemType Directory -Force -Path fftw | Out-Null
-          tar -xf fftw.zip -C fftw
-          Write-Output "FFTW files:"; Get-ChildItem fftw -Name | Select-Object -First 10
+
+      - name: Install FFTW3F via vcpkg
+        shell: cmd
+        run: |
+          where vcpkg
+          if errorlevel 1 ( git clone --depth 1 https://github.com/microsoft/vcpkg C:\vcpkg & C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics )
+          vcpkg install fftw3f:x64-windows
+          if errorlevel 1 exit /b 1
+          dir C:\vcpkg\installed\x64-windows\lib\*fftw3f*.lib /b 2>nul
+          dir C:\vcpkg\installed\x64-windows\include\fftw3.h 2>nul
 
       - name: CMake Configure (Ninja + vcvars + MSVC cl)
         shell: cmd
@@ -40,8 +46,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=cl ^
             -DGMX_GPU=CUDA ^
             -DGMX_FFT_LIBRARY=fftw3 ^
-            -DCMAKE_PREFIX_PATH="%CD%\fftw" ^
-            -DFFTWF_LIBRARY="%CD%\fftw\libfftw3f-3.lib" ^
+            -DCMAKE_PREFIX_PATH="C:\vcpkg\installed\x64-windows" ^
             -DGMX_MPI=OFF ^
             -DGMX_OPENMP=OFF ^
             -DGMX_DOUBLE=OFF ^
@@ -71,7 +76,7 @@ jobs:
           if (-not (Test-Path $gmx)) { Write-Error "install failed"; exit 1 }
           & $gmx --version | Select-String "GROMACS version|GPU support|CUDA compiler"
           # 补 FFTW + cuFFT 运行库
-          Copy-Item "fftw\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          Copy-Item "C:\vcpkg\installed\x64-windows\bin\*fftw*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
           Copy-Item "build\bin\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
 
       - name: Upload artifact
