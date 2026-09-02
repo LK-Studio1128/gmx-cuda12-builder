@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install CUDA 12.9 toolkit
-        uses: Jimver/cuda-toolkit@v0.2.21
+      - name: Install CUDA 12.8 toolkit
+        uses: ilammy/cuda-toolkit@main
         with:
-          cuda: '12.8.1'
+          version: '12.8.1'
 
       - name: Download GROMACS 2026.3 source
         shell: pwsh
