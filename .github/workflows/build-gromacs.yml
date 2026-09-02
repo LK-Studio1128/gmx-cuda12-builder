@@ -32,6 +32,7 @@ jobs:
             -DGMX_GPU=CUDA `
             -DGMX_BUILD_OWN_FFTW=ON `
             -DGMX_MPI=OFF `
+            -DGMX_OPENMP=OFF `
             -DGMX_DOUBLE=OFF `
             -DGMX_HWLOC=OFF `
             -DCMAKE_BUILD_TYPE=Release `
