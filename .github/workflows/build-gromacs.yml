@@ -86,10 +86,20 @@ jobs:
           # 补运行时：FFTW + CUDA runtime(cuFFT/cudart) —— 产物需自带才能跑
           Copy-Item "C:\vcpkg\installed\x64-windows\bin\*fftw*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
           Copy-Item "build\bin\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
-          $cudaBin = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin"
-          Copy-Item "$cudaBin\cufft64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          $cudaRoot = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
+          $cudaBin = "$cudaRoot\bin"
+          Write-Output "=== CUDA bin cuda/cufft dll ==="
+          Get-ChildItem "$cudaBin\cuda*.dll","$cudaBin\cufft*.dll" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
           Copy-Item "$cudaBin\cudart64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
           Copy-Item "$cudaBin\cublas64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          # cuFFT：bin 缺失则递归全 CUDA 目录定位（诊断 + 拷入）
+          $cufft = Get-ChildItem "$cudaRoot" -Recurse -Filter "cufft64_*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($cufft) {
+            Copy-Item $cufft.FullName "C:\gmxout\bin\"
+            Write-Output "cufft OK from: $($cufft.FullName)"
+          } else {
+            Write-Output "WARN: NO cufft64 dll under $cudaRoot"
+          }
           # verify（容错：失败只记录不中断，产物照常上传）
           try {
             & "C:\gmxout\bin\gmx.exe" --version 2>&1 | Out-File C:\gmx_version.txt
