@@ -27,6 +27,23 @@ jobs:
           curl.exe -L -o gromacs.tar.gz https://ftp.gromacs.org/gromacs/gromacs-2026.3.tar.gz
           tar -xzf gromacs.tar.gz
 
+      - name: Patch OpenMP find_package (CMake 3.31 OpenMP_CUDA bug workaround)
+        shell: pwsh
+        run: |
+          # LKDock drives mdrun threading as a single MPI rank with -ntomp >1 OpenMP threads,
+          # so GROMACS MUST be compiled with OpenMP (GMX_OPENMP=ON). With the CUDA language
+          # enabled, CMake >= 3.31 additionally probes OpenMP_CUDA during find_package(OpenMP)
+          # and fails (missing LIB_NAMES). Restricting every OpenMP find_package to
+          # COMPONENTS C CXX avoids the CUDA probe while keeping host OpenMP.
+          $patched = 0
+          Get-ChildItem -Path gromacs-2026.3 -Recurse -Filter CMakeLists.txt | ForEach-Object {
+            $c = Get-Content $_.FullName -Raw
+            $c2 = $c.Replace('find_package(OpenMP REQUIRED)', 'find_package(OpenMP REQUIRED COMPONENTS C CXX)')
+            $c2 = $c2.Replace('find_package(OpenMP)', 'find_package(OpenMP COMPONENTS C CXX)')
+            if ($c2 -ne $c) { Set-Content $_.FullName $c2 -NoNewline; $patched++; Write-Output ("patched: " + $_.FullName) }
+          }
+          Write-Output ("patched files: " + $patched)
+
       - name: Install FFTW3F via vcpkg
         shell: cmd
         run: |
@@ -42,9 +59,9 @@ jobs:
         with:
           path: |
             build
-          key: gmx-2026.3-cuda128-${{ runner.os }}-v1
+          key: gmx-2026.3-cuda128-omp-${{ runner.os }}-v2
           restore-keys: |
-            gmx-2026.3-cuda128-${{ runner.os }}-
+            gmx-2026.3-cuda128-omp-${{ runner.os }}-
 
       - name: CMake Configure (Ninja + vcvars + MSVC cl)
         shell: cmd
@@ -61,7 +78,7 @@ jobs:
             -DGMX_FFT_LIBRARY=fftw3 ^
             -DCMAKE_PREFIX_PATH="C:\vcpkg\installed\x64-windows" ^
             -DGMX_MPI=OFF ^
-            -DGMX_OPENMP=OFF ^
+            -DGMX_OPENMP=ON ^
             -DGMX_DOUBLE=OFF ^
             -DGMX_HWLOC=OFF ^
             -DCMAKE_BUILD_TYPE=Release ^
@@ -108,6 +125,13 @@ jobs:
           try {
             & "C:\gmxout\bin\gmx.exe" --version 2>&1 | Out-File C:\gmx_version.txt
             Get-Content C:\gmx_version.txt | Select-Object -First 4
+            # CRITICAL: LKDock threads via -ntomp >1 on a single MPI rank -> OpenMP build required.
+            if (Select-String -Path C:\gmx_version.txt -Pattern "OpenMP support:\s+enabled" -Quiet) {
+              Write-Output "OpenMP check: enabled (OK)"
+            } else {
+              Write-Error "OpenMP support DISABLED in this build - LKDock -ntomp threading would fail. Aborting."
+              exit 1
+            }
           } catch { Write-Output ("verify warn: " + $_.Exception.Message) }
           Get-ChildItem "C:\gmxout\bin" -Name | Select-Object -First 12
 
@@ -117,3 +141,4 @@ jobs:
           name: gromacs-2026.3-cuda12.8-win64
           path: C:\gmxout\**
           retention-days: 14
+
