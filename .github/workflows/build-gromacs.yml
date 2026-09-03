@@ -3,6 +3,10 @@ name: Build GROMACS 2026.3 CUDA12.8 (Windows)
 on:
   push:
     branches: [main]
+    # 仅当构建逻辑本身变化时才运行（文档/README/LICENSE 变更不触发，
+    # 避免浪费 Windows runner 分钟）。需要手动构建时用 workflow_dispatch。
+    paths:
+      - '.github/workflows/build-gromacs.yml'
   workflow_dispatch:
 
 jobs:
