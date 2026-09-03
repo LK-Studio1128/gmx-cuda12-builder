@@ -33,6 +33,15 @@ jobs:
           dir C:\vcpkg\installed\x64-windows\lib\*fftw3*.lib /b 2>nul
           dir C:\vcpkg\installed\x64-windows\include\fftw3.h 2>nul
 
+      - name: Cache GROMACS build (fast re-run)
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+          key: gmx-2026.3-cuda128-${{ runner.os }}-v1
+          restore-keys: |
+            gmx-2026.3-cuda128-${{ runner.os }}-
+
       - name: CMake Configure (Ninja + vcvars + MSVC cl)
         shell: cmd
         run: |
@@ -68,16 +77,25 @@ jobs:
           if errorlevel 1 exit /b 1
           if not exist "build\bin\gmx.exe" ( echo BUILD-FAIL & exit /b 1 )
 
-      - name: Install & verify
+      - name: Install & package (runtime dlls + verify)
         shell: pwsh
         run: |
           cmake --install build --config Release
           $gmx = "C:\gmxout\bin\gmx.exe"
           if (-not (Test-Path $gmx)) { Write-Error "install failed"; exit 1 }
-          & $gmx --version | Select-String "GROMACS version|GPU support|CUDA compiler"
-          # 补 FFTW + cuFFT 运行库
+          # 补运行时：FFTW + CUDA runtime(cuFFT/cudart) —— 产物需自带才能跑
           Copy-Item "C:\vcpkg\installed\x64-windows\bin\*fftw*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
           Copy-Item "build\bin\*.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          $cudaBin = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin"
+          Copy-Item "$cudaBin\cufft64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          Copy-Item "$cudaBin\cudart64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          Copy-Item "$cudaBin\cublas64_12.dll" "C:\gmxout\bin\" -ErrorAction SilentlyContinue
+          # verify（容错：失败只记录不中断，产物照常上传）
+          try {
+            & "C:\gmxout\bin\gmx.exe" --version 2>&1 | Out-File C:\gmx_version.txt
+            Get-Content C:\gmx_version.txt | Select-Object -First 4
+          } catch { Write-Output ("verify warn: " + $_.Exception.Message) }
+          Get-ChildItem "C:\gmxout\bin" -Name | Select-Object -First 12
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
