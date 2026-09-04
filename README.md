@@ -32,7 +32,7 @@ A self-contained artifact `gromacs-2026.3-cuda12.8-win64` (~230 MB zip) with:
 ```
 ├── GMXRC.bat              # environment launcher (GMXLIB/GMXBIN/PATH)
 ├── bin/
-│   ├── gmx.exe            # 96 MB fat binary — 7 CUDA architectures
+│   ├── gmx.exe            # ~100 MB fat binary — 11 CUDA architectures + PTX
 │   ├── cufft64_11.dll     # cuFFT 12.8 runtime — statically embeds the CUDA
 │   │                      # runtime (imports only KERNEL32 → no system CUDA
 │   │                      # runtime install required)
@@ -49,11 +49,40 @@ Key build attributes (verified from `gmx --version`):
 |----------------|----------------------------------------------------------|
 | GROMACS        | 2026.3 (mixed precision)                                  |
 | CUDA compiler  | nvcc **12.8.61** (NVIDIA 12.8.0 toolkit)                 |
-| CUDA targets   | `sm_75;80;86;89;90;100;120` (Turing → Blackwell)        |
+| CUDA targets   | `sm_50;52;61;70;75;80;86;89;90;100;120` + PTX `compute_120` (Maxwell → Blackwell) |
 | Compiler       | MSVC 19.44 (Visual Studio 2022)                          |
-| Parallelism    | thread-MPI (OpenMP disabled, see Troubleshooting)        |
+| Parallelism    | **OpenMP enabled** (`GMX_OPENMP=ON`) — mdrun threads via `-ntomp N` on a single MPI rank; thread-MPI also present |
 | SIMD           | AVX2_256                                                 |
 | FFT            | fftw3 (CPU) / cuFFT (GPU)                                |
+
+### Supported NVIDIA GPUs — by compute capability (CUDA architecture)
+
+Because the toolkit is **CUDA 12.8** (which still supports Maxwell/Pascal/Volta), this
+build covers **every CUDA-capable NVIDIA GPU from GTX 9-series (2014) through Blackwell
+(2026)**. CUDA 13-based engines cannot do this — CUDA 13 removed Maxwell/Pascal/Volta
+support entirely, so a GTX 10-series or V100 can **never** run a CUDA 13 build.
+
+| Compute cap | Architecture | Example GPUs              | Supported | PTX fallback |
+|:-----------:|:------------:|---------------------------|:---------:|:------------:|
+| `sm_50`     | Maxwell 1st  | GTX 750 / GTX 960         | ✅        | — |
+| `sm_52`     | Maxwell 2nd  | GTX 980 / GTX 970 / GTX 950 | ✅      | — |
+| `sm_61`     | Pascal       | **GTX 1060 / 1070 / 1080**, GTX 1080 Ti | ✅ | — |
+| `sm_70`     | Volta        | **V100**, TITAN V          | ✅        | — |
+| `sm_75`     | Turing       | RTX 20-series, GTX 16-series | ✅      | — |
+| `sm_80`     | Ampere       | RTX 30-series (A100)       | ✅        | — |
+| `sm_86`     | Ampere       | RTX 30-series (consumer)   | ✅        | — |
+| `sm_89`     | Ada Lovelace | RTX 40-series              | ✅        | — |
+| `sm_90`     | Hopper       | H100 / H200                | ✅        | — |
+| `sm_100`    | Blackwell    | B100 / B200                | ✅        | — |
+| `sm_120`    | Blackwell    | RTX 50-series              | ✅ native | `compute_120` PTX → future cards |
+
+* `120-virtual` = Blackwell PTX included, so a hypothetical future `sm_121+` device can JIT-compile it.
+* Mixed precision / mixed `sm_50`+`sm_61` cards are all handled by the same fat binary.
+
+> **CUDA-13 engines cannot cover the first four rows** (`sm_50/52/61/70`): NVIDIA dropped
+> Maxwell/Pascal/Volta from the CUDA 13 toolchain. If your machine has a GTX 10-series or
+> a V100, this **CUDA 12.8 all-arch build is the one that works** — that is the whole point
+> of producing it.
 
 ### Self-contained runtime
 
@@ -69,12 +98,13 @@ Key build attributes (verified from `gmx --version`):
 |------|--------------|
 | 1 | `Jimver/cuda-toolkit@v0.2.21` installs **CUDA 12.8.0** (~13 min) |
 | 2 | Download + extract GROMACS 2026.3 tarball from `ftp.gromacs.org` |
-| 3 | `vcpkg install fftw3:x64-windows` (port name is `fftw3`, not `fftw3f`) |
-| 4 | Restore build cache (re-runs skip straight to packaging) |
-| 5 | CMake configure with **Ninja** + `vcvars64` + explicit `-DCMAKE_(C|CXX)_COMPILER=cl` |
-| 6 | Ninja release build, 7 CUDA architectures (~2.5 h on the 2-core runner) |
-| 7 | `cmake --install`, copy FFTW + cuFFT runtime DLLs, tolerant `gmx --version` verify |
-| 8 | Upload artifact (14-day retention) |
+| 3 | **Patch OpenMP `find_package`** → `COMPONENTS C CXX` (CMake 3.31 `OpenMP_CUDA` bug; needed because we build `GMX_OPENMP=ON`) |
+| 4 | `vcpkg install fftw3:x64-windows` (port name is `fftw3`, not `fftw3f`) |
+| 5 | Restore build cache (re-runs skip straight to packaging) |
+| 6 | CMake configure with **Ninja** + `vcvars64` + explicit `-DCMAKE_(C|CXX)_COMPILER=cl` |
+| 7 | Ninja release build, 11 CUDA architectures + PTX (~4–5 h on the 2-core runner) |
+| 8 | `cmake --install`, copy FFTW + cuFFT runtime DLLs, `gmx --version` verify (incl. **OpenMP enabled** check) |
+| 9 | Upload artifact (14-day retention) |
 
 ### Configure flags used
 
@@ -84,13 +114,17 @@ cmake -S gromacs-2026.3 -B build -G Ninja ^
   -DGMX_GPU=CUDA ^
   -DGMX_FFT_LIBRARY=fftw3 ^
   -DCMAKE_PREFIX_PATH="C:\vcpkg\installed\x64-windows" ^
-  -DGMX_MPI=OFF -DGMX_OPENMP=OFF ^
+  -DGMX_MPI=OFF -DGMX_OPENMP=ON ^
   -DGMX_DOUBLE=OFF -DGMX_HWLOC=OFF ^
   -DCMAKE_BUILD_TYPE=Release ^
   -DCUDAToolkit_ROOT="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" ^
-  -DGMX_CUDA_TARGET_SM="75;80;86;89;90;100;120" ^
+  -DCMAKE_CUDA_ARCHITECTURES="50;52;61;70;75;80;86;89;90;100;120;120-virtual" ^
   -DCMAKE_INSTALL_PREFIX="C:\gmxout"
 ```
+
+> **Note:** GROMACS **2026.3 dropped `GMX_CUDA_TARGET_SM` / `GMX_CUDA_TARGET_COMPUTE`** — CMake warns they are unused. You **must** use `-DCMAKE_CUDA_ARCHITECTURES` instead (e.g. `"60;75;86"`). Use a plain `list` of SM codes to compile those archs natively, or append `-virtual` to a code to add its PTX for JIT forward-compatibility (here `120-virtual` makes the binary tolerant of future Blackwell+ cards).
+
+> **OpenMP is ON and required.** `-DGMX_OPENMP=ON` because the launcher drives `mdrun` as a single MPI rank with `-ntomp N` OpenMP threads. GROMACS's own `gmx --version` is checked during packaging to confirm `OpenMP support: enabled` (the build aborts if it is off). Enabling OpenMP alongside the CUDA language trips a CMake ≥3.31 `OpenMP_CUDA` probe that fails (`missing LIB_NAMES`), so the workflow first patches every `find_package(OpenMP...)` in the GROMACS tree to `COMPONENTS C CXX` (see the *Patch OpenMP find_package* step) — this keeps host OpenMP while skipping the broken CUDA probe.
 
 ---
 
@@ -122,7 +156,7 @@ Edit `.github/workflows/build-gromacs.yml`:
 
 - **GROMACS version** — change the download URL in *Download GROMACS source*.
 - **CUDA toolkit** — change `cuda: '12.8.0'` (Jimver supports 12.8.0; 12.8.1/12.9 are not yet in its version table) and the `CUDAToolkit_ROOT` path.
-- **Architectures** — edit `GMX_CUDA_TARGET_SM` (e.g. drop `sm_75/80` for a leaner binary).
+- **Architectures** — edit `CMAKE_CUDA_ARCHITECTURES` (e.g. drop `50;52;61;70` for a leaner binary if you do not need GTX-9/10-series or V100).
 - **More parallelism** — the free runner has only 2 cores; on a self-hosted runner lower nothing and just raise `--parallel`.
 - The **build cache** key includes the version — bump it when you change inputs to force a clean rebuild.
 
@@ -135,11 +169,12 @@ Edit `.github/workflows/build-gromacs.yml`:
 | `nvcc: Host compiler targets unsupported OS` | CMake picked MinGW `gcc` instead of MSVC | `call vcvars64.bat` + explicit `-DCMAKE_(C\|CXX)_COMPILER=cl` |
 | vcvars not found | GitHub runners install VS in `Enterprise`, not `Community` | hardcode the `Enterprise` path |
 | `GMX_BUILD_OWN_FFTW` rejected | GROMACS forbids auto-FFTW builds under MSVC | install FFTW via `vcpkg install fftw3:x64-windows` |
-| CMake 3.31 `OpenMP_CUDA` detection failure | Known FindOpenMP bug on Windows | `-DGMX_OPENMP=OFF` (thread-MPI still scales) |
+| CMake 3.31 `OpenMP_CUDA` detection failure (`missing LIB_NAMES`) | With CUDA enabled, CMake ≥3.31 probes `OpenMP_CUDA` during `find_package(OpenMP)` and fails | **patch every `find_package(OpenMP...)` to `COMPONENTS C CXX`** (keeps host OpenMP, skips the CUDA probe) — do **not** just set `GMX_OPENMP=OFF`, because the launcher needs OpenMP threading |
+| "All requested archs compiled but run still produced old 7-arch binary" | GROMACS 2026.3 ignores `GMX_CUDA_TARGET_SM`; cache restored a stale tree | use `CMAKE_CUDA_ARCHITECTURES` **and** bump the cache key / drop restore-keys so the arch change forces a full rebuild |
 | Official FFTW `dll64` .lib link test fails | Old FFTW import libs are not MSVC-friendly | use vcpkg `fftw3` instead |
 | CUDA action `12.8.1`/`12.9` "version not available" | Jimver version table lags | use `12.8.0` |
 | `git push` 502s from behind a proxy | flaky git-over-HTTPS | update files via the `gh api` contents endpoint |
-| Full rebuild on every run | 2-core runner, ~2.5 h CUDA build | `actions/cache` on the `build/` dir (re-runs: ~15 min) |
+| Full rebuild on every run | 2-core runner, ~2.5 h CUDA build (7-arch) / ~4–5 h (all-arch) | `actions/cache` on the `build/` dir (re-runs: ~15 min) |
 | Artifact can't run | missing runtime DLLs | copy FFTW + cuFFT DLLs into `bin/`; cuFFT is statically-runtimed |
 
 ---
