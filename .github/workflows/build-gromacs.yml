@@ -59,9 +59,8 @@ jobs:
         with:
           path: |
             build
-          key: gmx-2026.3-cuda128-omp-${{ runner.os }}-v3-allarch
-          restore-keys: |
-            gmx-2026.3-cuda128-omp-${{ runner.os }}-
+          # 不挂 restore-keys：架构清单变化必须全量重编，恢复旧对象反而掩盖错误
+          key: gmx-2026.3-cuda128-omp-${{ runner.os }}-v4-allarch
 
       - name: CMake Configure (Ninja + vcvars + MSVC cl)
         shell: cmd
@@ -83,8 +82,7 @@ jobs:
             -DGMX_HWLOC=OFF ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DCUDAToolkit_ROOT="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" ^
-            -DGMX_CUDA_TARGET_SM="50;52;61;70;75;80;86;89;90;100;120" ^
-            -DGMX_CUDA_TARGET_COMPUTE="120" ^
+            -DCMAKE_CUDA_ARCHITECTURES="50;52;61;70;75;80;86;89;90;100;120;120-virtual" ^
             -DCMAKE_INSTALL_PREFIX="C:\gmxout"
           if errorlevel 1 exit /b 1
           if not exist "build\build.ninja" ( echo CONFIG-FAIL & exit /b 1 )
